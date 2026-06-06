@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AI Chatbot by Amal Dev T S</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+</head>
+<body>
+
+<div class="app">
+    <!-- SIDEBAR -->
+    <div class="sidebar" id="sidebar">
+        <button class="new-chat-btn" onclick="newChat()">
+            <span>+</span> New Chat
+        </button>
+
+        <!-- Search Box -->
+        <div class="search-box">
+            <input type="text" id="search-input" placeholder="🔍 Search chats..." oninput="searchChats()">
+        </div>
+        
+        <div class="chat-history" id="chat-history"></div>
+        
+        <div class="sidebar-footer">
+            <div class="credits">
+                <p>Developed by</p>
+                <h3>✨ AMAL DEV T S</h3>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN AREA -->
+    <div class="main">
+        <div class="top-bar">
+            <button class="menu-btn" onclick="toggleSidebar()">☰</button>
+            <h2 id="current-chat-title">AI Chatbot</h2>
+        </div>
+
+        <div class="chat-area" id="chat-area">
+            <div class="welcome-screen" id="welcome-screen">
+                <div class="logo">🤖</div>
+                <h1>How can I help you today?</h1>
+                <div class="suggestions">
+                    <div class="suggestion-card" onclick="sendSuggestion('Explain quantum computing')">
+                        <h4>💡 Explain</h4><p>Quantum computing simply</p>
+                    </div>
+                    <div class="suggestion-card" onclick="sendSuggestion('Write a Python script for web scraping')">
+                        <h4>💻 Code</h4><p>Python web scraping</p>
+                    </div>
+                    <div class="suggestion-card" onclick="sendSuggestion('Give me startup ideas')">
+                        <h4>🚀 Ideas</h4><p>Creative startup ideas</p>
+                    </div>
+                    <div class="suggestion-card" onclick="sendSuggestion('Teach me JavaScript basics')">
+                        <h4>📚 Learn</h4><p>JavaScript basics</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- File Preview -->
+        <div class="file-preview" id="file-preview" style="display:none;">
+            <div class="preview-content">
+                <span id="file-name">📎 file</span>
+                <button onclick="removeFile()">✖</button>
+            </div>
+        </div>
+
+        <div class="input-container">
+            <div class="input-box">
+                <label class="upload-btn" title="Upload Image">
+                    📷
+                    <input type="file" id="image-input" accept="image/*" onchange="handleImageUpload(event)" hidden>
+                </label>
+                <label class="upload-btn" title="Upload File">
+                    📎
+                    <input type="file" id="file-input" accept=".pdf,.txt,.docx" onchange="handleFileUpload(event)" hidden>
+                </label>
+
+                <textarea id="user-input" placeholder="Message AI Chatbot..." onkeydown="handleKey(event)" rows="1"></textarea>
+
+                <button class="voice-btn" id="voice-btn" onclick="toggleVoice()" title="Voice Input">🎤</button>
+                <button class="send-btn" onclick="sendMessage()" title="Send">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+                        <path d="M2 21l21-9L2 3v7l15 2-15 2z"/>
+                    </svg>
+                </button>
+            </div>
+            <p class="footer-text">AI Chatbot can make mistakes. Verify important info.</p>
+        </div>
+    </div>
+</div>
+
+<script>
+const chatArea = document.getElementById("chat-area");
+const welcomeScreen = document.getElementById("welcome-screen");
+const input = document.getElementById("user-input");
+const filePreview = document.getElementById("file-preview");
+const fileName = document.getElementById("file-name");
+const voiceBtn = document.getElementById("voice-btn");
+
+let selectedImage = null;
+let selectedFile = null;
+let isListening = false;
+let recognition = null;
+let chats = JSON.parse(localStorage.getItem("chats") || "{}");
+let currentChatId = localStorage.getItem("currentChatId") || createChatId();
+
+// Initialize
+function createChatId() {
+    return "chat_" + Date.now();
+}
+
+function initApp() {
+    if (!chats[currentChatId]) {
+        chats[currentChatId] = { title: "New Chat", messages: [] };
+        saveChats();
+    }
+    renderChatList();
+    loadChat(currentChatId);
+}
+
+function saveChats() {
+    localStorage.setItem("chats", JSON.stringify(chats));
+    localStorage.setItem("currentChatId", currentChatId);
+}
+
+function renderChatList(filter = "") {
+    const historyDiv = document.getElementById("chat-history");
+    historyDiv.innerHTML = "";
+    
+    const chatIds = Object.keys(chats).reverse();
+    
+    chatIds.forEach(id => {
+        const chat = chats[id];
+        if (filter && !chat.title.toLowerCase().includes(filter.toLowerCase())) return;
+        
+        const item = document.createElement("div");
+        item.className = "history-item" + (id === currentChatId ? " active" : "");
+        
+        item.innerHTML = `
+            <span class="chat-title" onclick="loadChat('${id}')">💬 ${chat.title}</span>
+            <div class="chat-actions">
+                <button onclick="editChatName('${id}', event)" title="Rename">✏️</button>
+                <button onclick="deleteChat('${id}', event)" title="Delete">🗑️</button>
+            </div>
+        `;
+        historyDiv.appendChild(item);
+    });
+}
+
+function loadChat(id) {
+    currentChatId = id;
+    saveChats();
+    
+    document.getElementById("current-chat-title").textContent = chats[id].title;
+    chatArea.innerHTML = "";
+    
+    if (chats[id].messages.length === 0) {
+        chatArea.innerHTML = welcomeScreen.outerHTML;
+    } else {
+        chats[id].messages.forEach(msg => {
+            displayMessage(msg.text, msg.type);
+        });
+    }
+    
+    renderChatList();
+}
+
+function newChat() {
+    currentChatId = createChatId();
+    chats[currentChatId] = { title: "New Chat", messages: [] };
+    saveChats();
+    
+    fetch("/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: currentChatId })
+    });
+    
+    location.reload();
+}
+
+function editChatName(id, event) {
+    event.stopPropagation();
+    const newName = prompt("Enter new chat name:", chats[id].title);
+    if (newName && newName.trim()) {
+        chats[id].title = newName.trim();
+        saveChats();
+        renderChatList();
+        if (id === currentChatId) {
+            document.getElementById("current-chat-title").textContent = newName.trim();
+        }
+    }
+}
+
+function deleteChat(id, event) {
+    event.stopPropagation();
+    if (!confirm("Delete this chat?")) return;
+    
+    delete chats[id];
+    saveChats();
+    
+    if (id === currentChatId) {
+        const remaining = Object.keys(chats);
+        if (remaining.length > 0) {
+            loadChat(remaining[remaining.length - 1]);
+        } else {
+            newChat();
+        }
+    } else {
+        renderChatList();
+    }
+}
+
+function searchChats() {
+    const query = document.getElementById("search-input").value;
+    renderChatList(query);
+}
+
+function toggleSidebar() {
+    document.getElementById("sidebar").classList.toggle("hidden");
+}
+
+// Voice Recognition
+function setupVoice() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return null;
+    
+    const rec = new SR();
+    rec.continuous = false;
+    rec.interimResults = true;
+    rec.lang = 'en-US';
+    
+    rec.onresult = (event) => {
+        let transcript = '';
+        for (let i = 0; i < event.results.length; i++) {
+            transcript += event.results[i][0].transcript;
+        }
+        input.value = transcript;
+    };
+    
+    rec.onend = () => {
+        isListening = false;
+        voiceBtn.classList.remove('listening');
+        voiceBtn.textContent = '🎤';
+    };
+    
+    rec.onerror = (e) => {
+        console.error('Voice error:', e.error);
+        isListening = false;
+        voiceBtn.classList.remove('listening');
+        voiceBtn.textContent = '🎤';
+        if (e.error === 'not-allowed') {
+            alert("⚠️ Please allow microphone access in browser settings!");
+        }
+    };
+    
+    return rec;
+}
+
+recognition = setupVoice();
+
+function toggleVoice() {
+    if (!recognition) {
+        alert("⚠️ Voice not supported. Use Chrome/Edge/Brave browser.");
+        return;
+    }
+    
+    if (isListening) {
+        recognition.stop();
+    } else {
+        try {
+            recognition.start();
+            isListening = true;
+            voiceBtn.classList.add('listening');
+            voiceBtn.textContent = '🔴';
+        } catch (e) {
+            console.error(e);
+        }
+    }
+}
+
+// Auto resize
+input.addEventListener("input", function() {
+    this.style.height = "auto";
+    this.style.height = this.scrollHeight + "px";
+});
+
+function sendSuggestion(text) {
+    input.value = text;
+    sendMessage();
+}
+
+function handleImageUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    selectedImage = file;
+    selectedFile = null;
+    fileName.textContent = `🖼️ ${file.name}`;
+    filePreview.style.display = "block";
+}
+
+function handleFileUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    selectedFile = file;
+    selectedImage = null;
+    fileName.textContent = `📎 ${file.name}`;
+    filePreview.style.display = "block";
+}
+
+function removeFile() {
+    selectedImage = null;
+    selectedFile = null;
+    document.getElementById("image-input").value = "";
+    document.getElementById("file-input").value = "";
+    filePreview.style.display = "none";
+}
+
+// Display message with markdown + code blocks
+function displayMessage(text, type) {
+    if (welcomeScreen && welcomeScreen.parentNode) {
+        welcomeScreen.style.display = "none";
+    }
+    
+    const messageDiv = document.createElement("div");
+    messageDiv.className = `message-row ${type}`;
+    
+    const avatar = document.createElement("div");
+    avatar.className = "avatar";
+    avatar.textContent = type === "user" ? "👤" : "🤖";
+    
+    const content = document.createElement("div");
+    content.className = "message-content";
+    
+    if (type === "bot") {
+        content.innerHTML = renderMarkdown(text);
+        addCopyButtons(content);
+    } else {
+        content.textContent = text;
+    }
+    
+    messageDiv.appendChild(avatar);
+    messageDiv.appendChild(content);
+    chatArea.appendChild(messageDiv);
+    chatArea.scrollTop = chatArea.scrollHeight;
+    
+    return content;
+}
+
+function renderMarkdown(text) {
+    if (typeof marked !== 'undefined') {
+        return marked.parse(text);
+    }
+    return text;
+}
+
+function addCopyButtons(container) {
+    const codeBlocks = container.querySelectorAll('pre code');
+    codeBlocks.forEach(block => {
+        if (typeof hljs !== 'undefined') hljs.highlightElement(block);
+        
+        const pre = block.parentElement;
+        const wrapper = document.createElement('div');
+        wrapper.className = 'code-wrapper';
+        
+        const header = document.createElement('div');
+        header.className = 'code-header';
+        
+        const lang = block.className.replace('language-', '').replace('hljs', '').trim() || 'code';
+        header.innerHTML = `<span>${lang}</span><button class="copy-btn">📋 Copy</button>`;
+        
+        const copyBtn = header.querySelector('.copy-btn');
+        copyBtn.onclick = () => {
+            navigator.clipboard.writeText(block.textContent);
+            copyBtn.textContent = '✅ Copied!';
+            setTimeout(() => copyBtn.textContent = '📋 Copy', 2000);
+        };
+        
+        pre.parentNode.insertBefore(wrapper, pre);
+        wrapper.appendChild(header);
+        wrapper.appendChild(pre);
+    });
+}
+
+// Send message with STREAMING (fast response)
+async function sendMessage() {
+    const message = input.value.trim();
+    if (!message && !selectedImage && !selectedFile) return;
+    
+    let userDisplay = message;
+    if (selectedImage) userDisplay = `🖼️ [Image: ${selectedImage.name}]\n${message}`;
+    if (selectedFile) userDisplay = `📎 [File: ${selectedFile.name}]\n${message}`;
+    
+    displayMessage(userDisplay, "user");
+    chats[currentChatId].messages.push({ text: userDisplay, type: "user" });
+    
+    // Auto-generate chat title from first message
+    if (chats[currentChatId].messages.length === 1 && chats[currentChatId].title === "New Chat") {
+        chats[currentChatId].title = message.substring(0, 30) || "New Chat";
+        document.getElementById("current-chat-title").textContent = chats[currentChatId].title;
+        renderChatList();
+    }
+    
+    input.value = "";
+    input.style.height = "auto";
+    
+    const loadingDiv = displayMessage("", "bot");
+    loadingDiv.innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
+    
+    try {
+        let fullText = "";
+        
+        if (selectedImage) {
+            const formData = new FormData();
+            formData.append('image', selectedImage);
+            formData.append('message', message || 'What is in this image?');
+            formData.append('chat_id', currentChatId);
+            
+            const res = await fetch("/upload-image", { method: "POST", body: formData });
+            const data = await res.json();
+            fullText = data.reply;
+            loadingDiv.innerHTML = renderMarkdown(fullText);
+            addCopyButtons(loadingDiv);
+        } else if (selectedFile) {
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            formData.append('message', message || 'Summarize this');
+            formData.append('chat_id', currentChatId);
+            
+            const res = await fetch("/upload-file", { method: "POST", body: formData });
+            const data = await res.json();
+            fullText = data.reply;
+            loadingDiv.innerHTML = renderMarkdown(fullText);
+            addCopyButtons(loadingDiv);
+        } else {
+            // STREAMING for fast response
+            const res = await fetch("/chat-stream", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ message: message, chat_id: currentChatId })
+            });
+            
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            loadingDiv.innerHTML = "";
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n');
+                
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const json = JSON.parse(line.substring(6));
+                            if (json.text) {
+                                fullText += json.text;
+                                loadingDiv.innerHTML = renderMarkdown(fullText);
+                                chatArea.scrollTop = chatArea.scrollHeight;
+                            }
+                            if (json.done) {
+                                addCopyButtons(loadingDiv);
+                            }
+                        } catch (e) {}
+                    }
+                }
+            }
+        }
+        
+        chats[currentChatId].messages.push({ text: fullText, type: "bot" });
+        saveChats();
+        removeFile();
+        
+    } catch (error) {
+        loadingDiv.textContent = "⚠️ Error! Please try again.";
+        console.error(error);
+    }
+}
+
+function handleKey(e) {
+    if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+    }
+}
+
+initApp();
+</script>
+
+</body>
+</html>
